@@ -1,0 +1,28 @@
+# Secrets — never commit API keys
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# Dependencies
+node_modules/
+
+# Build output / packaged extension
+dist/
+build/
+*.zip
+*.crx
+*.pem
+
+# Editor / OS
+.claude/settings.local.json
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
