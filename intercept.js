@@ -3,6 +3,7 @@
     const originalFetch = window.fetch;
     const originalXHROpen = XMLHttpRequest.prototype.open;
     const originalXHRSend = XMLHttpRequest.prototype.send;
+    const originalXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
 
     // 2. Setup the bridge to talk to content.js
     class InterceptBus {
@@ -38,11 +39,22 @@
                 }
             }
 
-            // Capture request tokens & headers
+            // Capture request tokens & headers.
+            // Headers can live either on the init params or on a Request object
+            // passed as the first argument, so check both.
+            let headerPairs = [];
+            try {
+                if (initParams && initParams.headers) {
+                    headerPairs = Array.from(new Headers(initParams.headers).entries());
+                } else if (typeof Request !== "undefined" && resource instanceof Request) {
+                    headerPairs = Array.from(resource.headers.entries());
+                }
+            } catch (e) { }
+
             const requestData = {
                 url: url,
                 method: initParams?.method || "GET",
-                headers: initParams?.headers ? Array.from(new Headers(initParams.headers).entries()) : [],
+                headers: headerPairs,
                 body: initParams?.body,
                 status: responseClone.status,
                 statusText: responseClone.statusText
@@ -62,9 +74,19 @@
     XMLHttpRequest.prototype.open = function (method, url) {
         this._interceptUrl = url;
         this._interceptMethod = method;
-        this._interceptHeaders = {};
-        
+        // Array of [name, value] pairs, matching the shape used for fetch
+        this._interceptHeaders = [];
+
         return originalXHROpen.apply(this, arguments);
+    };
+
+    // Without this, _interceptHeaders stays empty and the CSRF token is never
+    // seen on XHR requests
+    XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+        if (!this._interceptHeaders) this._interceptHeaders = [];
+        this._interceptHeaders.push([name, value]);
+
+        return originalXHRSetRequestHeader.apply(this, arguments);
     };
 
     XMLHttpRequest.prototype.send = function (body) {
