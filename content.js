@@ -2,6 +2,38 @@ let capturedUserId = null;
 let capturedCourseId = null;
 let capturedAuthToken = null;
 
+// Coursera keeps the CSRF token in a cookie, which is available immediately on
+// page load. Intercepting a request only works if the page happens to make one
+// first, so read the cookie as the primary source and treat the interceptor as
+// a backup.
+function getTokenFromCookie() {
+    const match = document.cookie.match(/(?:^|;\s*)CSRF3-Token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+// Ask Coursera who we are. The "~" shorthand is not accepted by the video
+// event endpoint, so we need the numeric id before completing lectures.
+async function resolveUserId() {
+    if (capturedUserId) return capturedUserId;
+
+    try {
+        const res = await fetch("https://www.coursera.org/api/adminUserPermissions.v1?q=my", {
+            headers: { "X-CSRF3-Token": capturedAuthToken }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.elements && data.elements[0] && data.elements[0].id) {
+                capturedUserId = data.elements[0].id;
+                console.log("Resolved User ID from API:", capturedUserId);
+            }
+        }
+    } catch (e) {
+        console.log("Could not resolve user id:", e);
+    }
+
+    return capturedUserId;
+}
+
 // Listen for messages from the natively injected intercept script
 window.addEventListener("message", (event) => {
     // We only accept messages from ourselves
@@ -25,9 +57,10 @@ window.addEventListener("message", (event) => {
         }
     }
 
-    if (request && request.headers && request.headers.length > 0) {
+    // Headers arrive as [name, value] pairs from both the fetch and XHR patches
+    if (request && Array.isArray(request.headers)) {
         request.headers.forEach(header => {
-            if (header[0].toLowerCase() === 'x-csrf3-token') {
+            if (header && header[0] && header[0].toLowerCase() === 'x-csrf3-token' && header[1]) {
                 capturedAuthToken = header[1];
             }
         });
@@ -97,7 +130,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         if (!capturedAuthToken) {
-            sendResponse({ error: "Missing Auth Token! Please click around the course (e.g., refresh or open a new video) to grab background security tokens." });
+            capturedAuthToken = getTokenFromCookie();
+        }
+
+        if (!capturedAuthToken) {
+            sendResponse({ error: "Missing Auth Token! Please make sure you are logged in, then refresh the course page and try again." });
             return true;
         }
         if (!capturedCourseId) {
@@ -307,7 +344,22 @@ async function startCompletionLoop() {
             }
         });
 
+        // Without this check a 401/403 returns an HTML error page, .json() throws,
+        // and the user only ever sees the generic "An error occurred" alert.
+        if (!courseDataResponse.ok) {
+            const detail = courseDataResponse.status === 401 || courseDataResponse.status === 403
+                ? "Your session looks expired. Refresh the course page (or log in again) and retry."
+                : `Coursera returned HTTP ${courseDataResponse.status}.`;
+            showOrUpdateBanner("Could not load course data. " + detail, "error");
+            alert("Could not load course data. " + detail);
+            setTimeout(hideBanner, 6000);
+            return;
+        }
+
         const courseData = await courseDataResponse.json();
+
+        // The lecture endpoint needs the numeric user id
+        await resolveUserId();
         // Extract the true internal course ID (e.g., 't_wxQwp9...') from the first element
         let internalCourseId = capturedCourseId;
         if (courseData && courseData.elements && courseData.elements.length > 0 && courseData.elements[0].id) {
@@ -330,41 +382,68 @@ async function startCompletionLoop() {
         const CHUNK_SIZE = 6;
         console.log(`Found ${itemsToComplete.length} items to complete! Starting loop in chunks of ${CHUNK_SIZE}...`);
 
+        let succeeded = 0;
+        let skipped = 0;
+        const failures = [];
+
+        // Fires one completion request and reports whether it actually worked.
+        // Previously the response was discarded, so a course where every single
+        // request was rejected still ended with a "Completed!" alert.
+        const completeItem = async (itemObj) => {
+            const itemId = itemObj.id;
+            const itemType = itemObj.type;
+            const finalUserId = capturedUserId || "~";
+
+            let response;
+
+            if (itemType === 'lecture' || itemType === 'unknown') {
+                response = await fetch(`https://www.coursera.org/api/opencourse.v1/user/${finalUserId}/course/${capturedCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken },
+                    body: JSON.stringify({ "contentRequestBody": {} })
+                });
+            } else if (itemType === 'supplement' && internalCourseId) {
+                response = await fetch(`https://www.coursera.org/api/onDemandSupplementCompletions.v1`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken },
+                    body: JSON.stringify({ "userId": parseInt(finalUserId) || finalUserId, "courseId": internalCourseId, "itemId": itemId })
+                });
+            } else {
+                console.log(`[Skipping] Item ${itemId} has type '${itemType}' and does not need automation.`);
+                return "skipped";
+            }
+
+            return response.ok ? "ok" : response.status;
+        };
+
         for (let i = 0; i < itemsToComplete.length; i += CHUNK_SIZE) {
             const chunk = itemsToComplete.slice(i, i + CHUNK_SIZE);
             const chunkEnd = Math.min(i + CHUNK_SIZE, itemsToComplete.length);
 
             showOrUpdateBanner(`Completing items ${i + 1} to ${chunkEnd} of ${itemsToComplete.length}... ⚡`);
 
-            const chunkPromises = chunk.map(async (itemObj, indexInChunk) => {
-                const itemId = itemObj.id;
-                const itemType = itemObj.type;
-                const absIndex = i + indexInChunk + 1;
-
-                console.log(`[${absIndex}/${itemsToComplete.length}] Faking completion for item: ${itemId} (Type: ${itemType})`);
-
+            const chunkPromises = chunk.map(async (itemObj) => {
                 try {
-                    const finalUserId = capturedUserId || "~";
+                    let outcome = await completeItem(itemObj);
 
-                    if (itemType === 'lecture' || itemType === 'unknown') {
-                        return fetch(`https://www.coursera.org/api/opencourse.v1/user/${finalUserId}/course/${capturedCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken },
-                            body: JSON.stringify({ "contentRequestBody": {} })
-                        });
-                    } else if (itemType === 'supplement') {
-                        if (internalCourseId) {
-                            return fetch(`https://www.coursera.org/api/onDemandSupplementCompletions.v1`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken },
-                                body: JSON.stringify({ "userId": parseInt(finalUserId) || finalUserId, "courseId": internalCourseId, "itemId": itemId })
-                            });
-                        }
+                    // One retry: rate limiting and transient 5xx are common when
+                    // firing six requests at once
+                    if (outcome !== "ok" && outcome !== "skipped") {
+                        await new Promise(r => setTimeout(r, 800));
+                        outcome = await completeItem(itemObj);
+                    }
+
+                    if (outcome === "ok") {
+                        succeeded++;
+                    } else if (outcome === "skipped") {
+                        skipped++;
                     } else {
-                        console.log(`[Skipping] Item ${itemId} has type '${itemType}' and does not need automation.`);
+                        failures.push({ name: itemObj.name || itemObj.id, type: itemObj.type, status: outcome });
+                        console.log(`[Failed] ${itemObj.name || itemObj.id} (${itemObj.type}) -> HTTP ${outcome}`);
                     }
                 } catch (e) {
-                    console.log(`[Error] Request failed for item ${itemId}`, e);
+                    failures.push({ name: itemObj.name || itemObj.id, type: itemObj.type, status: "network error" });
+                    console.log(`[Error] Request failed for item ${itemObj.id}`, e);
                 }
             });
 
@@ -375,13 +454,35 @@ async function startCompletionLoop() {
             await new Promise(r => setTimeout(r, 400));
         }
 
-        showOrUpdateBanner("Course Automagically Completed! Please refresh the page.", "success");
-        alert("Course Automagically Completed! please refresh the page to see the changes.");
-        setTimeout(hideBanner, 6000);
+        const attempted = succeeded + failures.length;
+        console.log(`Done. ${succeeded} completed, ${failures.length} failed, ${skipped} skipped.`, failures);
+
+        if (attempted === 0) {
+            showOrUpdateBanner(`Nothing to do — all ${skipped} items were quizzes or unsupported types.`, "error");
+            alert(`Nothing to do.\n\nAll ${skipped} items were quizzes, assignments or types this cannot automate.`);
+            setTimeout(hideBanner, 6000);
+        } else if (succeeded === 0) {
+            const status = failures[0] ? failures[0].status : "unknown";
+            const hint = (status === 401 || status === 403)
+                ? "Coursera rejected the requests — refresh the page and make sure you are logged in and enrolled."
+                : `Coursera returned HTTP ${status}.`;
+            showOrUpdateBanner(`Nothing was completed. ${hint}`, "error");
+            alert(`Nothing was completed (0 of ${attempted}).\n\n${hint}\n\nOpen the console (F12) for the full list.`);
+            setTimeout(hideBanner, 8000);
+        } else if (failures.length > 0) {
+            showOrUpdateBanner(`Completed ${succeeded} of ${attempted}. ${failures.length} failed — refresh to see changes.`, "success");
+            alert(`Completed ${succeeded} of ${attempted} items.\n${failures.length} failed (see console for details).\n\nRefresh the page to see the changes.`);
+            setTimeout(hideBanner, 8000);
+        } else {
+            showOrUpdateBanner(`Course Automagically Completed! (${succeeded} items) Please refresh the page.`, "success");
+            alert(`Course Automagically Completed! ${succeeded} items marked done.\n\nRefresh the page to see the changes.`);
+            setTimeout(hideBanner, 6000);
+        }
     } catch (err) {
         console.error(err);
-        showOrUpdateBanner("An error occurred. Check browser console.", "error");
-        alert("An error occurred. Check browser console.");
+        const detail = err && err.message ? err.message : "Unknown error";
+        showOrUpdateBanner("An error occurred: " + detail, "error");
+        alert("An error occurred: " + detail + "\n\nCheck the browser console (F12) for details.");
         setTimeout(hideBanner, 5000);
     }
 }
@@ -404,10 +505,19 @@ function extractVideoAndReadingIds(jsonMap) {
             // Fallback to name checking just in case
             const isQuizName = item.name && (item.name.toLowerCase().includes('quiz') || item.name.toLowerCase().includes('challenge'));
 
-            if (item && item.id && !isQuizClass && !isQuizName) {
-                // Push BOTH the ID and the exact Type so the completion loop knows what to do!
-                ids.push({ id: item.id, type: exactType });
-            } else if (item && item.id) {
+            if (!item || !item.id) return;
+
+            // Locked items always get rejected by the API, so don't count them as failures
+            if (item.isLocked) {
+                console.log(`[Filtered out locked item]: ${item.name} (${exactType})`);
+                return;
+            }
+
+            if (!isQuizClass && !isQuizName) {
+                // Push the ID, the exact Type so the completion loop knows what to do,
+                // and the name so failures can be reported readably
+                ids.push({ id: item.id, type: exactType, name: item.name });
+            } else {
                 console.log(`[Filtered out assignment/quiz]: ${item.name} (${exactType})`);
             }
         });
