@@ -7,42 +7,39 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      /* Soft light base */
-      --background: #f4f6fc;
-      --card: rgba(255, 255, 255, 0.72);
-
-      --foreground: #0b1020;
-      --muted: #5b6478;
-
-      /* Indigo → cyan signature gradient */
-      --primary: #4f46e5;
-      --primary-hover: #4338ca;
-      --primary-2: #0891b2;
-      --secondary: rgba(15, 23, 42, 0.06);
-      --secondary-text: #334155;
-      --accent: #f59e0b;
+      /* Quieter, tinted neutral background */
+      --background: #f8fafc;
+      --card: #ffffff;
+      
+      /* Bolder text */
+      --foreground: #0f172a;
+      --muted: #64748b;
+      
+      /* Semantic Colorize */
+      --primary: #2563eb;       /* Electric Blue */
+      --primary-hover: #1d4ed8;
+      --secondary: #e2e8f0;     /* Muted secondary */
+      --secondary-text: #475569;
+      --accent: #f59e0b;        /* Amber for power action */
       --accent-hover: #d97706;
-      --border: rgba(15, 23, 42, 0.10);
-      --glow: rgba(79, 70, 229, 0.28);
-
-      --radius-sm: 10px;
+      --border: #e2e8f0;
+      
+      --radius-sm: 8px;
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --background: #070b18;
-        --card: rgba(255, 255, 255, 0.045);
-        --foreground: #eef2ff;
-        --muted: #93a1bd;
-        --primary: #6366f1;
-        --primary-hover: #818cf8;
-        --primary-2: #22d3ee;
-        --secondary: rgba(255, 255, 255, 0.07);
-        --secondary-text: #dbe4ff;
+        --background: #0f172a;
+        --card: #1e293b;
+        --foreground: #f8fafc;
+        --muted: #94a3b8;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+        --secondary: #334155;
+        --secondary-text: #e2e8f0;
         --accent: #f59e0b;
         --accent-hover: #fbbf24;
-        --border: rgba(255, 255, 255, 0.09);
-        --glow: rgba(99, 102, 241, 0.38);
+        --border: #334155;
       }
     }
 
@@ -57,70 +54,22 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
-      position: relative;
-      overflow-x: hidden;
     }
 
-    /* Slow drifting aurora behind everything */
-    body::before {
-      content: "";
-      position: fixed;
-      inset: -40% -40% auto -40%;
-      height: 320px;
-      background:
-        radial-gradient(closest-side, var(--glow), transparent 70%),
-        radial-gradient(closest-side, rgba(34, 211, 238, 0.22), transparent 70%);
-      background-position: 20% 30%, 80% 10%;
-      background-size: 60% 100%, 55% 90%;
-      background-repeat: no-repeat;
-      filter: blur(18px);
-      pointer-events: none;
-      z-index: -1;
-      animation: drift 14s ease-in-out infinite alternate;
+    /* Quieter title, bold weight, extreme scale */
+    .header {
+      margin-bottom: 4px;
     }
 
-    @keyframes drift {
-      from { transform: translate3d(-4%, 0, 0) scale(1); }
-      to   { transform: translate3d(6%, 3%, 0) scale(1.12); }
-    }
-
-    /* Staggered entrance for each block */
-    .header, .section, .footer {
-      animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-    .header  { animation-delay: 0.02s; }
-    .section:nth-of-type(1) { animation-delay: 0.08s; }
-    .section:nth-of-type(2) { animation-delay: 0.14s; }
-    .section:nth-of-type(3) { animation-delay: 0.20s; }
-    .footer  { animation-delay: 0.26s; }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: none; }
-    }
-
-    .header { margin-bottom: 4px; }
-
-    /* Title carries the signature gradient, slowly flowing */
     .title {
-      font-size: 1.9rem;
+      font-size: 1.8rem;
       font-weight: 800;
       line-height: 1.1;
       margin-bottom: 4px;
-      letter-spacing: -0.035em;
-      background: linear-gradient(100deg, var(--foreground) 0%, var(--primary) 45%, var(--primary-2) 65%, var(--foreground) 100%);
-      background-size: 250% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      animation: flow 9s linear infinite;
+      color: var(--foreground);
+      letter-spacing: -0.03em;
     }
-
-    @keyframes flow {
-      from { background-position: 0% 50%; }
-      to   { background-position: 250% 50%; }
-    }
-
+    
     .subtitle {
       font-size: 0.85rem;
       color: var(--muted);
@@ -128,22 +77,18 @@
       line-height: 1.4;
     }
 
-    /* Grouped sections, now on translucent glass */
+    /* Arrange: Grouped sections instead of monotonous cards */
     .section {
       display: flex;
       flex-direction: column;
       gap: 12px;
-      padding: 16px;
-      border-radius: 14px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      backdrop-filter: blur(10px);
-      transition: border-color 0.25s ease, transform 0.25s ease;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
     }
-
-    .section:hover {
-      border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
-      transform: translateY(-1px);
+    
+    .section:last-of-type {
+      border-bottom: none;
+      padding-bottom: 4px;
     }
 
     .section-header {
@@ -151,23 +96,11 @@
       flex-direction: column;
       gap: 2px;
     }
-
-    /* Small gradient tick to the left of every section title */
+    
     .section-title {
       font-size: 0.95rem;
       font-weight: 600;
       letter-spacing: -0.01em;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .section-title::before {
-      content: "";
-      width: 3px;
-      height: 14px;
-      border-radius: 2px;
-      background: linear-gradient(180deg, var(--primary), var(--primary-2));
     }
 
     .section-desc {
@@ -184,7 +117,7 @@
 
     input {
       flex: 1;
-      height: 40px;
+      height: 38px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
       background-color: var(--card);
@@ -192,121 +125,81 @@
       font-size: 0.85rem;
       font-family: inherit;
       color: var(--foreground);
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      transition: all 0.2s ease;
       min-width: 0;
     }
 
     input:focus {
       outline: none;
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px var(--glow);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
-
+    
     input::placeholder {
       color: var(--muted);
       opacity: 0.7;
     }
 
-    /* Buttons: gradient fills, lift + shine sweep on hover */
+    /* Buttons: Semantic coloring, quieter effects, bold purpose */
     .btn {
-      position: relative;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
       border-radius: var(--radius-sm);
       font-size: 0.85rem;
       font-weight: 600;
       font-family: inherit;
-      height: 40px;
+      height: 38px;
       padding: 0 16px;
       cursor: pointer;
       width: 100%;
       border: none;
-      overflow: hidden;
-      transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease, filter 0.18s ease;
+      transition: all 0.15s ease-out;
     }
-
-    /* The sweep */
-    .btn::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.35) 50%, transparent 75%);
-      transform: translateX(-120%);
-      transition: transform 0.6s ease;
-    }
-    .btn:hover:not(:disabled)::after { transform: translateX(120%); }
-
-    .btn:hover:not(:disabled) { transform: translateY(-2px); }
-    .btn:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+    
+    .btn:active { transform: scale(0.98); }
 
     .btn-primary {
-      background-image: linear-gradient(135deg, var(--primary), var(--primary-2));
+      background-color: var(--primary);
       color: #fff;
-      box-shadow: 0 4px 14px -6px var(--glow);
     }
-    .btn-primary:hover:not(:disabled) {
-      filter: saturate(1.15);
-      box-shadow: 0 10px 22px -8px var(--glow);
-    }
+    .btn-primary:hover:not(:disabled) { background-color: var(--primary-hover); }
 
     .btn-accent {
-      background-image: linear-gradient(135deg, var(--accent), #fb7185);
+      background-color: var(--accent);
       color: #fff;
-      box-shadow: 0 4px 14px -6px rgba(245, 158, 11, 0.45);
     }
-    .btn-accent:hover:not(:disabled) {
-      filter: saturate(1.15);
-      box-shadow: 0 10px 22px -8px rgba(245, 158, 11, 0.55);
-    }
+    .btn-accent:hover:not(:disabled) { background-color: var(--accent-hover); }
 
     .btn-secondary {
       background-color: var(--secondary);
       color: var(--secondary-text);
-      border: 1px solid var(--border);
+      font-weight: 600;
     }
-    .btn-secondary:hover:not(:disabled) {
-      border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
-    }
-
-    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-    /* popup.js injects <span class="spinner"> into buttons while working */
-    .spinner {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      border: 2px solid rgba(255, 255, 255, 0.35);
-      border-top-color: #fff;
-      display: inline-block;
-      animation: spin 0.7s linear infinite;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-secondary:hover:not(:disabled) { opacity: 0.8; }
+    
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Utilities */
     .meta-row {
-      display: flex;
-      justify-content: space-between;
+      display: flex; 
+      justify-content: space-between; 
       align-items: center;
     }
 
     #status {
       font-size: 0.75rem;
-      color: #10b981;
+      color: #10b981; 
       font-weight: 500;
     }
-    #status:not(:empty) { animation: rise 0.3s ease both; }
 
     .link {
-      font-size: 0.7rem;
-      color: var(--primary);
-      text-decoration: none;
+      font-size: 0.7rem; 
+      color: var(--primary); 
+      text-decoration: none; 
       font-weight: 600;
-      transition: gap 0.2s ease, opacity 0.2s ease;
     }
-    .link:hover { text-decoration: underline; opacity: 0.85; }
+    .link:hover { text-decoration: underline; }
 
     #result {
       font-size: 0.8rem;
@@ -319,14 +212,13 @@
       display: none;
       max-height: 150px;
       overflow-y: auto;
-      animation: rise 0.3s ease both;
     }
 
     .footer {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-top: 4px;
       font-size: 0.75rem;
       color: var(--muted);
@@ -334,68 +226,28 @@
       font-weight: 500;
     }
 
-    /* The signature: flowing gradient name with a growing underline */
-    .author {
-      position: relative;
-      font-weight: 800;
-      letter-spacing: 0.01em;
+    .footer a {
+      color: var(--foreground);
+      font-weight: 600;
       text-decoration: none;
-      background: linear-gradient(90deg, var(--primary), var(--primary-2), var(--accent), var(--primary));
-      background-size: 300% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      animation: flow 5s linear infinite;
-      transition: filter 0.25s ease;
-      display: inline-block;
+      transition: color 0.15s;
     }
-
-    .author::after {
-      content: "";
-      position: absolute;
-      left: 50%;
-      bottom: -2px;
-      width: 0;
-      height: 1.5px;
-      border-radius: 2px;
-      background: linear-gradient(90deg, var(--primary), var(--primary-2));
-      transform: translateX(-50%);
-      transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    
+    .footer a:hover { 
+      color: var(--primary);
     }
-
-    .author:hover { filter: brightness(1.2); }
-    .author:hover::after { width: 100%; }
-
+    
     .update-badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 14px;
+      gap: 4px;
+      padding: 4px 10px;
       background-color: var(--secondary);
-      border: 1px solid var(--border);
-      border-radius: 999px;
+      border-radius: 12px;
       color: var(--foreground) !important;
-      text-decoration: none;
-      font-weight: 600;
-      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
     }
-
     .update-badge:hover {
-      transform: translateY(-2px);
-      border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-      box-shadow: 0 8px 18px -10px var(--glow);
-    }
-
-    /* Icon nudges upward on hover, matching the "update" idea */
-    .update-badge svg { transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
-    .update-badge:hover svg { transform: translateY(-2px); }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001ms !important;
-      }
+      background-color: var(--border);
     }
   </style>
 </head>
@@ -439,7 +291,7 @@
   </div>
 
   <div class="footer">
-    <span>created by <a href="https://github.com/Manan-Khanna05" target="_blank" class="author">Manan Khanna</a></span>
+    <span>created by <a href="https://github.com/Manan-Khanna05" target="_blank">Manan Khanna</a></span>
     <a href="https://github.com/Manan-Khanna05/skip-course-mk" target="_blank" class="update-badge">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       Check for updates
