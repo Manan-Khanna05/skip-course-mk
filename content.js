@@ -386,6 +386,92 @@ async function startCompletionLoop() {
         let skipped = 0;
         const failures = [];
 
+        const jsonHeaders = { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken };
+
+        // Readings complete reliably, videos do not, so the lecture endpoint is
+        // the part that is wrong or has changed. Try the known request shapes in
+        // order and remember whichever one Coursera accepts, so the rest of the
+        // course uses it directly instead of retrying all of them each time.
+        const lectureStrategies = [
+            {
+                name: "videoEvents/ended (contentRequestBody)",
+                run: (itemId, uid) => fetch(`https://www.coursera.org/api/opencourse.v1/user/${uid}/course/${capturedCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+                    method: "POST",
+                    headers: jsonHeaders,
+                    body: JSON.stringify({ "contentRequestBody": {} })
+                })
+            },
+            {
+                name: "videoEvents/ended (empty body)",
+                run: (itemId, uid) => fetch(`https://www.coursera.org/api/opencourse.v1/user/${uid}/course/${capturedCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+                    method: "POST",
+                    headers: jsonHeaders,
+                    body: "{}"
+                })
+            },
+            {
+                name: "videoEvents/ended (internal course id)",
+                run: (itemId, uid) => fetch(`https://www.coursera.org/api/opencourse.v1/user/${uid}/course/${internalCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+                    method: "POST",
+                    headers: jsonHeaders,
+                    body: JSON.stringify({ "contentRequestBody": {} })
+                })
+            },
+            {
+                name: "onDemandVideoProgresses updateProgress",
+                run: (itemId, uid) => fetch(`https://www.coursera.org/api/onDemandVideoProgresses.v1/${uid}~${internalCourseId}~${itemId}?action=updateProgress`, {
+                    method: "POST",
+                    headers: jsonHeaders,
+                    body: JSON.stringify({ "percentWatched": 1, "viewedUpTo": 1 })
+                })
+            }
+        ];
+
+        let workingLectureStrategy = null;
+        let lastLectureResponse = null;
+
+        // Run the probe once, on a single item, before the parallel loop starts.
+        // Otherwise six items would each probe every variant simultaneously.
+        const probeLectureEndpoint = async (itemId, uid) => {
+            for (const strategy of lectureStrategies) {
+                let response;
+                try {
+                    response = await strategy.run(itemId, uid);
+                } catch (e) {
+                    console.log(`[Video] "${strategy.name}" -> network error`, e);
+                    continue;
+                }
+
+                lastLectureResponse = response;
+
+                if (response.ok) {
+                    workingLectureStrategy = strategy;
+                    console.log(`[Video] Using endpoint: ${strategy.name}`);
+                    return;
+                }
+
+                // The body usually explains the rejection
+                let body = "";
+                try { body = (await response.clone().text()).slice(0, 300); } catch (e) { }
+                console.log(`[Video] "${strategy.name}" -> HTTP ${response.status} ${body}`);
+            }
+
+            console.log("[Video] No known endpoint worked. Videos cannot be completed; readings will still run.");
+        };
+
+        const completeLecture = async (itemId, uid) => {
+            if (workingLectureStrategy) {
+                return await workingLectureStrategy.run(itemId, uid);
+            }
+            return lastLectureResponse;
+        };
+
+        const firstLecture = itemsToComplete.find(it => it.type === 'lecture' || it.type === 'unknown');
+        if (firstLecture) {
+            showOrUpdateBanner("Checking which video endpoint works...", "info");
+            await probeLectureEndpoint(firstLecture.id, capturedUserId || "~");
+        }
+
         // Fires one completion request and reports whether it actually worked.
         // Previously the response was discarded, so a course where every single
         // request was rejected still ended with a "Completed!" alert.
@@ -397,11 +483,7 @@ async function startCompletionLoop() {
             let response;
 
             if (itemType === 'lecture' || itemType === 'unknown') {
-                response = await fetch(`https://www.coursera.org/api/opencourse.v1/user/${finalUserId}/course/${capturedCourseId}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "X-CSRF3-Token": capturedAuthToken },
-                    body: JSON.stringify({ "contentRequestBody": {} })
-                });
+                response = await completeLecture(itemId, finalUserId);
             } else if (itemType === 'supplement' && internalCourseId) {
                 response = await fetch(`https://www.coursera.org/api/onDemandSupplementCompletions.v1`, {
                     method: "POST",
@@ -412,6 +494,9 @@ async function startCompletionLoop() {
                 console.log(`[Skipping] Item ${itemId} has type '${itemType}' and does not need automation.`);
                 return "skipped";
             }
+
+            // completeLecture returns null when every known endpoint failed
+            if (!response) return "no working endpoint";
 
             return response.ok ? "ok" : response.status;
         };
@@ -470,8 +555,13 @@ async function startCompletionLoop() {
             alert(`Nothing was completed (0 of ${attempted}).\n\n${hint}\n\nOpen the console (F12) for the full list.`);
             setTimeout(hideBanner, 8000);
         } else if (failures.length > 0) {
+            const failedVideos = failures.filter(f => f.type === 'lecture' || f.type === 'unknown').length;
+            const breakdown = failedVideos > 0
+                ? `\n${failedVideos} of those are videos — Coursera rejected the video endpoint.`
+                : "";
+
             showOrUpdateBanner(`Completed ${succeeded} of ${attempted}. ${failures.length} failed — refresh to see changes.`, "success");
-            alert(`Completed ${succeeded} of ${attempted} items.\n${failures.length} failed (see console for details).\n\nRefresh the page to see the changes.`);
+            alert(`Completed ${succeeded} of ${attempted} items.\n${failures.length} failed (see console for details).${breakdown}\n\nRefresh the page to see the changes.`);
             setTimeout(hideBanner, 8000);
         } else {
             showOrUpdateBanner(`Course Automagically Completed! (${succeeded} items) Please refresh the page.`, "success");
